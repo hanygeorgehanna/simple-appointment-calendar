@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simple Appointment Calendar</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:24px;line-height:1.5;color:#111}
+h1{font-size:28px;margin-bottom:4px}
+p.sub{color:#555;margin-top:0}
+form{display:grid;gap:10px;background:#f6f6f6;padding:16px;border-radius:12px;margin:20px 0}
+label{font-weight:600;font-size:14px}
+input,textarea{width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font:inherit;box-sizing:border-box}
+button{padding:10px 14px;border:0;border-radius:8px;background:#111;color:#fff;font:inherit;cursor:pointer}
+button.secondary{background:#e5e5e5;color:#111}
+ul{list-style:none;padding:0}
+li{border:1px solid #ddd;border-radius:10px;padding:12px;margin:10px 0;display:flex;justify-content:space-between;gap:12px}
+li .meta{color:#555;font-size:14px}
+.empty{color:#555}
+</style>
+</head>
+<body>
+<h1>Simple Appointment Calendar</h1>
+<p class="sub">Add appointments, see them in order, and export them. Everything is saved in your browser only.</p>
+
+<form id="form">
+  <div><label for="title">Title</label><input id="title" required maxlength="120" placeholder="e.g. Dentist appointment"></div>
+  <div><label for="date">Date</label><input id="date" type="date" required></div>
+  <div><label for="time">Time</label><input id="time" type="time" required></div>
+  <div><label for="notes">Notes (optional)</label><textarea id="notes" rows="2" maxlength="500" placeholder="Address, phone number, anything useful"></textarea></div>
+  <div><button type="submit">Add appointment</button></div>
+</form>
+
+<div>
+  <label for="filter">Show appointments for</label>
+  <input id="filter" type="date">
+  <button class="secondary" id="showAll" type="button">Show all</button>
+  <button class="secondary" id="export" type="button">Export .ics</button>
+</div>
+
+<ul id="list"></ul>
+<p class="empty" id="empty">No appointments yet.</p>
+
+<script>
+const KEY = 'simple-appointment-calendar-v1';
+const listEl = document.getElementById('list');
+const emptyEl = document.getElementById('empty');
+const filterEl = document.getElementById('filter');
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; }
+}
+function save(items) { localStorage.setItem(KEY, JSON.stringify(items)); }
+
+function render() {
+  const all = load().sort((a, b) => (a.date + 'T' + a.time).localeCompare(b.date + 'T' + b.time));
+  const shown = filterEl.value ? all.filter(a => a.date === filterEl.value) : all;
+  listEl.innerHTML = '';
+  emptyEl.style.display = shown.length ? 'none' : 'block';
+  for (const item of shown) {
+    const li = document.createElement('li');
+    const left = document.createElement('div');
+    const strong = document.createElement('strong');
+    strong.textContent = item.title;
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = item.date + ' at ' + item.time + (item.notes ? ' — ' + item.notes : '');
+    left.append(strong, meta);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = 'Delete';
+    del.onclick = () => { save(load().filter(x => x.id !== item.id)); render(); };
+    li.append(left, del);
+    listEl.appendChild(li);
+  }
+}
+
+document.getElementById('form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const item = {
+    id: Date.now().toString(36),
+    title: document.getElementById('title').value.trim(),
+    date: document.getElementById('date').value,
+    time: document.getElementById('time').value,
+    notes: document.getElementById('notes').value.trim()
+  };
+  if (!item.title || !item.date || !item.time) return;
+  const items = load(); items.push(item); save(items);
+  e.target.reset(); render();
+});
+
+filterEl.addEventListener('change', render);
+document.getElementById('showAll').addEventListener('click', () => { filterEl.value = ''; render(); });
+document.getElementById('export').addEventListener('click', () => {
+  const items = load().sort((a, b) => (a.date + 'T' + a.time).localeCompare(b.date + 'T' + b.time));
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Simple Appointment Calendar//EN'];
+  for (const item of items) {
+    const start = item.date.replaceAll('-', '') + 'T' + item.time.replace(':', '') + '00';
+    lines.push('BEGIN:VEVENT', 'UID:' + item.id + '@simple-appointment-calendar', 'DTSTAMP:' + start, 'DTSTART:' + start, 'SUMMARY:' + item.title.replace(/[,;\n]/g, ' '));
+    if (item.notes) lines.push('DESCRIPTION:' + item.notes.replace(/[,;\n]/g, ' '));
+    lines.push('END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'appointments.ics'; a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+render();
+</script>
+</body>
+</html>
